@@ -1,0 +1,27 @@
+{
+  "name": "civicpulse",
+  "version": "1.0.0",
+  "private": true,
+  "description": "CivicPulse - civic infrastructure complaint management (PostgreSQL + pgvector + Next.js)",
+  "scripts": {
+    "dev": "next dev",
+    "build": "next build",
+    "start": "next start",
+    "db:setup": "node scripts/setup-db.mjs",
+    "db:embed": "node scripts/backfill-embeddings.mjs",
+    "db:test": "node scripts/run-tests.mjs"
+  },
+  "dependencies": {
+    "@huggingface/transformers": "^3.0.2",
+    "bcryptjs": "^2.4.3",
+    "dotenv": "^16.4.5",
+    "jose": "^5.9.6",
+    "next": "^14.2.25",
+    "pg": "^8.13.1",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1"
+  },
+  "engines": {
+    "node": ">=18.18"
+  }
+}
