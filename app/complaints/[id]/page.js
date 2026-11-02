@@ -3,8 +3,9 @@
 import Link from 'next/link';
 import { useCallback, useEffect, useState } from 'react';
 import { useParams, useRouter } from 'next/navigation';
-import { api, formatDateTime, slaText, plate } from '@/lib/client';
+import { api, formatDateTime, slaText, plate, uploadImages, imageUrl, MAX_PHOTOS } from '@/lib/client';
 import { StatusBadge, PriorityLabel, ErrorNotice, Notice } from '@/components/Badges';
+import PhotoPicker from '@/components/PhotoPicker';
 import { PRIORITIES, STATUS_LABELS } from '@/lib/workflow';
 
 export default function ComplaintDetailPage() {
@@ -19,6 +20,14 @@ export default function ComplaintDetailPage() {
   const [staffId, setStaffId] = useState('');
   const [rating, setRating] = useState('5');
   const [comment, setComment] = useState('');
+  const [newPhotos, setNewPhotos] = useState([]);
+  const [photoError, setPhotoError] = useState(null);
+
+  // Set by the "Report an issue" page when the complaint was saved but its photos were not
+  useEffect(() => {
+    const failed = new URLSearchParams(window.location.search).get('photos');
+    if (failed) setPhotoError(new Error(`The complaint was saved, but the photos were not: ${failed}`));
+  }, []);
 
   const load = useCallback(() => {
     api(`/api/complaints/${id}`)
@@ -76,8 +85,21 @@ export default function ComplaintDetailPage() {
     );
   };
 
+  const addPhotos = () =>
+    run(async () => {
+      await uploadImages(id, newPhotos.map((p) => p.file));
+      newPhotos.forEach((p) => URL.revokeObjectURL(p.url));
+      setNewPhotos([]);
+      setPhotoError(null);
+    }, newPhotos.length === 1 ? 'Photo added.' : 'Photos added.');
+
+  const removePhoto = (imageId) => {
+    if (!window.confirm('Remove this photo?')) return;
+    run(() => api(`/api/complaints/${id}/images/${imageId}`, { method: 'DELETE' }), 'Photo removed.');
+  };
+
   async function remove() {
-    if (!window.confirm('Delete this complaint permanently? Its history and feedback are removed too.')) return;
+    if (!window.confirm('Delete this complaint permanently? Its history, photos and feedback are removed too.')) return;
     setBusy(true);
     try {
       await api(`/api/complaints/${id}`, { method: 'DELETE' });
@@ -98,7 +120,7 @@ export default function ComplaintDetailPage() {
   }
   if (!data) return <main className="page"><p className="muted">Loading complaint…</p></main>;
 
-  const { complaint: c, history, assignments, feedback, similar, staffOptions, permissions } = data;
+  const { complaint: c, history, assignments, feedback, similar, images, staffOptions, permissions } = data;
 
   return (
     <main className="page">
@@ -156,6 +178,47 @@ export default function ComplaintDetailPage() {
               )}
             </dl>
           </section>
+
+          {(images.length > 0 || permissions.canAddImages || photoError) && (
+            <section className="panel">
+              <div className="panel-title">
+                <h2>Photos</h2>
+                <span className="small muted">{images.length} of {MAX_PHOTOS}</span>
+              </div>
+              <ErrorNotice error={photoError} />
+              {images.length > 0 ? (
+                <ul className="photo-grid large">
+                  {images.map((img) => (
+                    <li key={img.image_id}>
+                      <a href={imageUrl(c.complaint_id, img.image_id)} target="_blank" rel="noreferrer" title="Open full size">
+                        <img src={imageUrl(c.complaint_id, img.image_id)} alt={img.file_name} loading="lazy" />
+                      </a>
+                      <div className="photo-caption small muted">
+                        {Math.max(1, Math.round(img.size_bytes / 1024))} KB · {formatDateTime(img.uploaded_at)}
+                      </div>
+                      {permissions.canDeleteImages && (
+                        <button type="button" className="photo-remove" onClick={() => removePhoto(img.image_id)} disabled={busy} aria-label="Remove photo">
+                          ×
+                        </button>
+                      )}
+                    </li>
+                  ))}
+                </ul>
+              ) : (
+                <p className="small muted">No photos yet.</p>
+              )}
+              {permissions.canAddImages && (
+                <div style={{ marginTop: 12 }}>
+                  <PhotoPicker id="more-photos" max={MAX_PHOTOS - images.length} photos={newPhotos} onChange={setNewPhotos} disabled={busy} />
+                  {newPhotos.length > 0 && (
+                    <button className="btn small" style={{ marginTop: 10 }} onClick={addPhotos} disabled={busy}>
+                      Upload {newPhotos.length} photo{newPhotos.length === 1 ? '' : 's'}
+                    </button>
+                  )}
+                </div>
+              )}
+            </section>
+          )}
 
           <section className="panel">
             <h2>Status history</h2>

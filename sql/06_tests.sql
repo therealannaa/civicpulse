@@ -364,4 +364,50 @@ BEGIN
     END IF;
 END $$;
 
+-- T26 A complaint can have at most 3 photos (trigger trg_images_validate)
+DO $$
+DECLARE v_id INT; v_user INT;
+BEGIN
+    SELECT complaint_id, citizen_id INTO v_id, v_user FROM complaints WHERE title = 'Pothole near school entrance';
+    FOR i IN 1..3 LOOP
+        INSERT INTO complaint_images (file_name, mime_type, size_bytes, data, complaint_id, uploaded_by)
+        VALUES ('photo' || i || '.jpg', 'image/jpeg', 4, decode('ffd8ffe0', 'hex'), v_id, v_user);
+    END LOOP;
+    BEGIN
+        INSERT INTO complaint_images (file_name, mime_type, size_bytes, data, complaint_id, uploaded_by)
+        VALUES ('photo4.jpg', 'image/jpeg', 4, decode('ffd8ffe0', 'hex'), v_id, v_user);
+        RAISE NOTICE 'FAIL | T26 | a fourth photo was accepted';
+    EXCEPTION WHEN check_violation THEN
+        RAISE NOTICE 'PASS | T26 | fourth photo rejected (%)', SQLERRM;
+    END;
+END $$;
+
+-- T27 Only JPEG, PNG and WebP photos are accepted (CHECK chk_images_mime)
+DO $$
+DECLARE v_id INT; v_user INT;
+BEGIN
+    SELECT complaint_id, citizen_id INTO v_id, v_user FROM complaints WHERE title = 'Pavement tiles missing outside metro station';
+    BEGIN
+        INSERT INTO complaint_images (file_name, mime_type, size_bytes, data, complaint_id, uploaded_by)
+        VALUES ('anim.gif', 'image/gif', 4, decode('47494638', 'hex'), v_id, v_user);
+        RAISE NOTICE 'FAIL | T27 | a GIF was accepted';
+    EXCEPTION WHEN check_violation THEN
+        RAISE NOTICE 'PASS | T27 | unsupported image type rejected (%)', SQLERRM;
+    END;
+END $$;
+
+-- T28 No photos can be added to a CLOSED complaint (trigger trg_images_validate)
+DO $$
+DECLARE v_id INT; v_user INT;
+BEGIN
+    SELECT complaint_id, citizen_id INTO v_id, v_user FROM complaints WHERE status = 'CLOSED' ORDER BY complaint_id LIMIT 1;
+    BEGIN
+        INSERT INTO complaint_images (file_name, mime_type, size_bytes, data, complaint_id, uploaded_by)
+        VALUES ('late.jpg', 'image/jpeg', 4, decode('ffd8ffe0', 'hex'), v_id, v_user);
+        RAISE NOTICE 'FAIL | T28 | photo accepted on a CLOSED complaint';
+    EXCEPTION WHEN check_violation THEN
+        RAISE NOTICE 'PASS | T28 | photo on CLOSED complaint rejected (%)', SQLERRM;
+    END;
+END $$;
+
 ROLLBACK;

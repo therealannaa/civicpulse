@@ -429,3 +429,40 @@ BEGIN
     RETURN v_count;
 END;
 $$;
+
+-- ---------------------------------------------------------------------
+-- 12. BEFORE INSERT on complaint_images: at most 3 photos per complaint,
+--     and no new photos once the complaint is CLOSED or REJECTED.
+--     The complaint row is locked so two uploads at the same moment
+--     cannot both slip past the limit.
+-- ---------------------------------------------------------------------
+CREATE OR REPLACE FUNCTION trg_images_validate()
+RETURNS TRIGGER
+LANGUAGE plpgsql
+AS $$
+DECLARE
+    v_status VARCHAR(12);
+    v_count  INT;
+BEGIN
+    SELECT status INTO v_status
+      FROM complaints
+     WHERE complaint_id = NEW.complaint_id
+       FOR UPDATE;
+
+    IF v_status IN ('CLOSED', 'REJECTED') THEN
+        RAISE EXCEPTION 'Photos cannot be added to a % complaint', v_status
+            USING ERRCODE = 'check_violation';
+    END IF;
+
+    SELECT COUNT(*) INTO v_count FROM complaint_images WHERE complaint_id = NEW.complaint_id;
+    IF v_count >= 3 THEN
+        RAISE EXCEPTION 'A complaint can have at most 3 photos (complaint % already has %)', NEW.complaint_id, v_count
+            USING ERRCODE = 'check_violation';
+    END IF;
+    RETURN NEW;
+END;
+$$;
+
+CREATE TRIGGER trg_images_validate
+    BEFORE INSERT ON complaint_images
+    FOR EACH ROW EXECUTE FUNCTION trg_images_validate();

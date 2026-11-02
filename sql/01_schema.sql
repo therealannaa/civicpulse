@@ -16,7 +16,7 @@ CREATE EXTENSION IF NOT EXISTS pgcrypto;   -- crypt()/gen_salt() used to hash se
 -- DROP (re-runnable script: CASCADE also removes dependent views/triggers)
 -- ---------------------------------------------------------------------
 DROP VIEW  IF EXISTS v_ward_summary, v_staff_workload, v_department_performance, v_complaint_details CASCADE;
-DROP TABLE IF EXISTS feedback, status_history, assignments, complaints,
+DROP TABLE IF EXISTS complaint_images, feedback, status_history, assignments, complaints,
                      staff_profile, user_phone, users, categories, departments, wards CASCADE;
 
 -- ---------------------------------------------------------------------
@@ -171,6 +171,26 @@ CREATE TABLE feedback (
 );
 
 -- ---------------------------------------------------------------------
+-- COMPLAINT_IMAGES  (weak entity: a complaint HAS up to 3 photos)
+--   The photo bytes are stored in the database as BYTEA, so they are
+--   access-checked, backed up and deleted (CASCADE) together with the complaint.
+-- ---------------------------------------------------------------------
+CREATE TABLE complaint_images (
+    image_id     SERIAL       PRIMARY KEY,
+    uploaded_at  TIMESTAMPTZ  NOT NULL DEFAULT now(),
+    file_name    VARCHAR(150) NOT NULL,
+    mime_type    VARCHAR(20)  NOT NULL,
+    size_bytes   INT          NOT NULL,
+    data         BYTEA        NOT NULL,
+    complaint_id INT          NOT NULL,
+    uploaded_by  INT          NOT NULL,
+    CONSTRAINT chk_images_mime          CHECK (mime_type IN ('image/jpeg', 'image/png', 'image/webp')),
+    CONSTRAINT chk_images_size          CHECK (size_bytes BETWEEN 1 AND 2097152),   -- at most 2 MB
+    CONSTRAINT chk_images_size_matches  CHECK (size_bytes = octet_length(data)),
+    CONSTRAINT chk_images_file_name     CHECK (length(trim(file_name)) >= 1)
+);
+
+-- ---------------------------------------------------------------------
 -- ALTER TABLE : foreign keys are added after every table exists
 -- ---------------------------------------------------------------------
 ALTER TABLE categories     ADD CONSTRAINT fk_categories_dept       FOREIGN KEY (dept_id)      REFERENCES departments(dept_id)      ON DELETE RESTRICT;
@@ -186,6 +206,8 @@ ALTER TABLE assignments    ADD CONSTRAINT fk_assignments_staff     FOREIGN KEY (
 ALTER TABLE status_history ADD CONSTRAINT fk_history_complaint     FOREIGN KEY (complaint_id) REFERENCES complaints(complaint_id)  ON DELETE CASCADE;
 ALTER TABLE feedback       ADD CONSTRAINT fk_feedback_complaint    FOREIGN KEY (complaint_id) REFERENCES complaints(complaint_id)  ON DELETE CASCADE;
 ALTER TABLE feedback       ADD CONSTRAINT fk_feedback_user         FOREIGN KEY (user_id)      REFERENCES users(user_id)            ON DELETE CASCADE;
+ALTER TABLE complaint_images ADD CONSTRAINT fk_images_complaint    FOREIGN KEY (complaint_id) REFERENCES complaints(complaint_id)  ON DELETE CASCADE;
+ALTER TABLE complaint_images ADD CONSTRAINT fk_images_uploader     FOREIGN KEY (uploaded_by)  REFERENCES users(user_id)            ON DELETE CASCADE;
 
 -- ---------------------------------------------------------------------
 -- INDEXES
@@ -201,6 +223,7 @@ CREATE INDEX idx_complaints_citizen    ON complaints (citizen_id);
 CREATE INDEX idx_complaints_created_at ON complaints (created_at DESC);
 CREATE INDEX idx_staff_profile_dept    ON staff_profile (dept_id);
 CREATE INDEX idx_history_complaint     ON status_history (complaint_id, changed_at);
+CREATE INDEX idx_images_complaint      ON complaint_images (complaint_id);
 
 -- Partial unique index: at most ONE active (not unassigned) staff per complaint
 CREATE UNIQUE INDEX uq_assignments_active        ON assignments (complaint_id) WHERE unassigned_at IS NULL;

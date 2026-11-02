@@ -2,8 +2,9 @@
 
 import { useEffect, useMemo, useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { api } from '@/lib/client';
+import { api, uploadImages, MAX_PHOTOS } from '@/lib/client';
 import { ErrorNotice, StatusBadge } from '@/components/Badges';
+import PhotoPicker from '@/components/PhotoPicker';
 import { PRIORITIES } from '@/lib/workflow';
 
 const EMPTY = {
@@ -27,6 +28,7 @@ export default function NewComplaintPage() {
   const [checking, setChecking] = useState(false);
   const [similarError, setSimilarError] = useState(null);
   const [geoMessage, setGeoMessage] = useState('');
+  const [photos, setPhotos] = useState([]);
 
   useEffect(() => {
     Promise.all([api('/api/meta'), api('/api/auth/me')])
@@ -101,7 +103,17 @@ export default function NewComplaintPage() {
     setError(null);
     try {
       const d = await api('/api/complaints', { method: 'POST', body: form });
-      router.push(`/complaints/${d.complaint_id}`);
+      // The complaint is saved first; photos are uploaded to it afterwards.
+      // If the upload fails the complaint still exists and the detail page says so.
+      let photoNote = '';
+      if (photos.length) {
+        try {
+          await uploadImages(d.complaint_id, photos.map((p) => p.file));
+        } catch (err) {
+          photoNote = `?photos=${encodeURIComponent(err.message)}`;
+        }
+      }
+      router.push(`/complaints/${d.complaint_id}${photoNote}`);
     } catch (err) {
       setError(err);
       setBusy(false);
@@ -183,6 +195,10 @@ export default function NewComplaintPage() {
           <div className="row" style={{ marginTop: 10 }}>
             <button type="button" className="btn small secondary" onClick={fillMyLocation}>Use my current location</button>
             <span className="small muted">{geoMessage}</span>
+          </div>
+          <div className="field" style={{ marginTop: 18 }}>
+            <label htmlFor="photos">Photos <span className="hint">optional, up to {MAX_PHOTOS}</span></label>
+            <PhotoPicker id="photos" max={MAX_PHOTOS} photos={photos} onChange={setPhotos} disabled={busy} />
           </div>
           <div className="row" style={{ marginTop: 22 }}>
             <button className="btn" type="submit" disabled={busy}>{busy ? 'Submitting…' : 'Submit complaint'}</button>
